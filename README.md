@@ -4,6 +4,10 @@ This software is designed for automatic Subaru Denso ROM table markup using mach
 
 ### What's new
 
+#### Version 2024.0311
+
+Improved generated ScoobyRom XML definition file compatibility with ScoobyTables. Now table names are capitalized. Added script that adds suffixes `_A`, `_B` etc or `_1`, `_2` etc to same table names. It could be used after predicted definitions cleanup.
+
 #### Version 2024.0302
 
 Implemented support of CSV definitions format

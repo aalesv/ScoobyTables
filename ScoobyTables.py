@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 from enum import Enum, auto
 
-VERSION = '2024.0302'
+VERSION = '2024.0311'
 
 class CaseInsensitiveEnum(str, Enum):
     @classmethod
@@ -342,10 +342,13 @@ def createTable2DXml(row):
         ('storagetype', row['data_type'])
     ]
     values = createElement('values', attributesArray)
+    #This is needed to compatibility, ScoobyRom ignores this
+    commentV = ET.Comment(' min: Unknown  max: Unknown  average: Unknown ')
 
     table2D.append(axisX)
     table2D.append(values)
     table2D.insert(0, commentX)
+    table2D.insert(2, commentV)
     return table2D
 
 def createTable3DXml(row):
@@ -623,6 +626,7 @@ elif args.predict is not None:
         dataFrame = rawDataFrame
     #Overwrite old names with predicted ones
     dataFrame['name'] = predicted_names
+    dataFrame['name'] = dataFrame['name'].str.title()
     #Convert storageaddress to hex string
     dataFrame['storageaddress'] = dataFrame['storageaddress'].apply(int).apply(lambda i: f'0x{i:X}')
     dataFrame['knn_min_distance'] = knn_min_distance
