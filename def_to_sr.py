@@ -3,7 +3,7 @@
 # Converts RomRaider definitions to ScoobyRom
 # Outputs to output.xml in the same directory where ROM is
 #
-# Version 2024.0307
+# Version 2024.0313
 #
 import xml.etree.cElementTree as ET
 
@@ -42,9 +42,7 @@ def getRRTables(xmlRoot, calId):
 		t2d = rom.findall(xath_t2d)
 		xpath_t3d = './table[@type="3D"]'
 		t3d = rom.findall(xpath_t3d)
-		for t in t2d:
-			tables.append(t)
-		for t in t3d:
+		for t in t2d + t3d:
 			tables.append(t)
 	else:
 		#Include base tables

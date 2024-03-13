@@ -37,6 +37,7 @@ ScoobyTables works with defs in ScoobyRom XML or CSV format. You can [get Scooby
 * Backup `YOUR-ROM-NAME.xml` if you want and rename `output.xml` to `YOUR-ROM-NAME.xml`
 * Reopen your ROM with `ScoobyRom`
 * Inspect tables; you should see tables that ScoobyTables has found.
+* The software is not 100% accurate. There will be incorrectly detected or named tables, some tables could be missing. Please verify every table before proceeding further!
 
 ## <a name="works"></a> How it works and why exactly this way and not otherwise
 
