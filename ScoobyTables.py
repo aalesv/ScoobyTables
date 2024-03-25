@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 from enum import Enum, auto
 
-VERSION = '2024.0311'
+VERSION = '2024.0325'
 
 class CaseInsensitiveEnum(str, Enum):
     @classmethod
@@ -257,11 +257,11 @@ def parseOneCsvFile(filename):
     dataFrame['name'] = dataFrame['name'].replace(regex=r'(.*)_[a-z0-9]$', value=r'\1')
     return dataFrame
 
-def trainKNN(x, y):
+def trainKNN(x, y, neighbors=2):
     """
     Train KNN model. x - data dataframe, y - names dataframe. Returns trained KNN model
     """
-    knn = KNeighborsClassifier(n_neighbors=2)
+    knn = KNeighborsClassifier(n_neighbors=neighbors)
     knn.fit(x, y)
     return knn
 
@@ -462,11 +462,11 @@ parserGroupMain.add_argument('--train',
                              metavar='<dirname>',
                              help='Train, test and dump model. Specify --test-accuracy to test accuracy.')
 parserGroupMain.add_argument('--predict',
-                             metavar='<filename.xml>',
-                             help='Predict. Get data from <filename.xml> and <filename.bin>')
+                             metavar='<filename>',
+                             help='Predict. Get data from <filename>. XML and CVS formats are supported and autodetected based on the extension.')
 parserGroupOptions = parser.add_argument('-i', '--input-format',
                                          choices=['xml','csv'],
-                                         help='Input data format',
+                                         help='Input data format.',
                                          #Detect presence of this argument
                                          action=ArgSetNonDefaultAttr,
                                          default='xml')
@@ -477,34 +477,42 @@ parserGroupOptions = parser.add_argument('--model-dump-file',
 parserGroupOptions = parser.add_argument('-v', '--verbose',
                                          action='store_true',
                                          help='Be verbose.')
+parserGroupOptions = parser.add_argument('--neighbors',
+                                         metavar='<number of neighbors>',
+                                         help='Number of neighbors for KNN model.',
+                                         type=int, default=2)
 parserGroupOptions = parser.add_argument('--test-accuracy',
                                          action='store_true',
                                          help='Test model accuracy during model training.')
 parserGroupOptions = parser.add_argument('--test-sample-size',
-                                         metavar='<number from 0.0 to 1.0>',
-                                         help=f'Test sample size.',
+                                         metavar='<float number from 0.0 to 1.0>',
+                                         help='Test sample size.',
                                          type=float, default=TEST_SAMPLE_SIZE)
+parserGroupOptions = parser.add_argument('--random-state',
+                                         metavar='<int number>',
+                                         help='Test sample random state pseudo-random number. If not set, test sample is purely random.',
+                                         type=int)
 parserGroupOptions = parser.add_argument('--dry-run',
                                          action='store_true',
                                          help='Do not save anything to files.')
 parserGroupOptions = parser.add_argument('--knn-min-2d-reliable-metric',
                                          metavar='<float number>',
-                                         help=f'Minimum reliable metric for 2D tables.',
+                                         help='Minimum reliable metric for 2D tables.',
                                          type=float, default=KNN_MIN_2D_RELIABLE_METRIC)
 parserGroupOptions = parser.add_argument('--knn-min-3d-reliable-metric',
                                          metavar='<float number>',
-                                         help=f'Minimum reliable metric for 3D tables.',
+                                         help='Minimum reliable metric for 3D tables.',
                                          type=float, default=KNN_MIN_3D_RELIABLE_METRIC)
 parserGroupOptions = parser.add_argument('--pre-xml-filename',
                                          metavar='<filename>',
-                                         help=f'Predicted XML definitions file name.',
+                                         help='Predicted XML definitions file name.',
                                          default=f'{PRE_XML_FILENAME}')
 parserGroupOptions = parser.add_argument('--dump-txt',
                                          action='store_true',
                                          help='Write predicted data to text file.')
 parserGroupOptions = parser.add_argument('--pre-txt-filename',
                                          metavar='<filename>',
-                                         help=f'Predicted dataframe text file name.',
+                                         help='Predicted dataframe text file name.',
                                          default=f'{PRE_TXT_FILENAME}')
 parserGroupOptions = parser.add_argument('--version',
                                          action='version',
@@ -527,7 +535,7 @@ inputFormat = args.input_format.lower()
 
 if dataset is not None:
     print_console_verbose(f'Loading dataset from {dataset}.')
-    print_console_verbose(f'Format is {inputFormat}')
+    print_console_verbose(f'Format is {inputFormat.upper()}.')
     if inputFormat == DataFormat.csv:
         #CSV defs, can be exported from ScoobyRom
         dataFrame = loadCsvFromDirNormalized(dataset)
@@ -548,16 +556,20 @@ if dataset is not None:
         X_train, X_holdout, y_train, y_holdout = train_test_split(dataFrame.values,
                                                                   y,
                                                                   test_size=args.test_sample_size,
-                                                                  random_state=17)
+                                                                  random_state=args.random_state)
     else:
         X_train = dataFrame
         y_train = y
 
     #Train
-    model = trainKNN(X_train, y_train)
+    model = trainKNN(X_train, y_train, args.neighbors)
     #Print accuracy if needed
     if args.test_accuracy:
         knn_pred = model.predict(X_holdout)
+        if args.random_state is None:
+            print('Test sample is purely random.')
+        else:
+            print(f'Test sample pseudo-random number is {args.random_state}.')
         print_console_verbose('Model accuracy score:')
         print(accuracy_score(y_holdout, knn_pred))
     else:
