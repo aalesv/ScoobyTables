@@ -4,7 +4,7 @@ import argparse
 from collections import Counter
 from lxml import etree as ET
 
-VERSION=2024.0311
+VERSION=2024.0411
 
 def char_count(count):
     """
@@ -37,7 +37,6 @@ parserGroupOptions = parser.add_argument(
     metavar='<filename>',
     help='Output filename. stdout if not specified'
 )
-OUTPUT_TO_STDOUT = True
 parserGroupOptions = parser.add_argument(
     '-F', '--word-separator',
     metavar='<symbol>',
@@ -62,8 +61,7 @@ input_file  = args.input
 output_file = args.output
 word_separator=args.word_separator
 
-if output_file is not None:
-    OUTPUT_TO_STDOUT = False
+OUTPUT_TO_STDOUT = output_file is None
 
 parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
 xml_root = ET.parse(input_file, parser)
