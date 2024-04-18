@@ -6,19 +6,13 @@ from lxml import etree as ET
 import numpy as np
 import pyarrow
 import pandas as pd
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.tree import DecisionTreeClassifier
-
-from sklearn.model_selection import GridSearchCV, cross_val_score
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-
 import pickle
 from enum import Enum, auto
 
-VERSION = '2024.0325'
+VERSION = '2024.0418'
 
 class CaseInsensitiveEnum(str, Enum):
     @classmethod
