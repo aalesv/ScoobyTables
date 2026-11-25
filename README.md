@@ -4,6 +4,14 @@ This software is designed for automatic Subaru Denso ROM table markup using mach
 
 ### What's new
 
+#### Version 2026.1125
+
+No new features - refactored to support pandas 3 library.
+
+### Version 2024.0325
+
+Added '--neighbors' and '--random-state' CLI parameters. Edited help and verbose messages.
+
 #### Version 2024.0311
 
 Improved generated ScoobyRom XML definition file compatibility with ScoobyTables. Now table names are capitalized. Added script that adds suffixes `_A`, `_B` etc or `_1`, `_2` etc to same table names. It could be used after predicted definitions cleanup.
