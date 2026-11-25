@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score
 import pickle
 from enum import Enum, auto
 
-VERSION = '2024.0418'
+VERSION = '2026.1125'
 
 class CaseInsensitiveEnum(str, Enum):
     @classmethod
@@ -28,7 +28,7 @@ class DataFormat(CaseInsensitiveEnum):
 
 class ArgSetNonDefaultAttr(argparse.Action):
     """
-    If argument with default value was specified on command line, 
+    If argument with default value was specified on command line,
     a new attribute named <argument_name>_nondefault set
     """
     def __call__(self, parser, namespace, values, option_string=None):
@@ -40,16 +40,13 @@ def normalizeDataFrame(dataFrame):
     Normalizes DataFrame
     """
     #Convert to float
-    #all except 'name' column
-    #dataFrame.loc[:, dataFrame.columns != 'name'] = dataFrame.loc[:, dataFrame.columns != 'name'].astype(float)
     #Last column is string
     header = dataFrame.columns
     for i in header[:len(header)-1]:
         dataFrame[i] = dataFrame[i].astype(float)
 
     #Convert to distance from start of data area
-    dataFrame['distance'] = dataFrame['storageaddress']
-    dataFrame.drop(['storageaddress'], axis=1, inplace=True)
+    dataFrame = dataFrame.rename(columns={'storageaddress': 'distance'})
     min = dataFrame['distance'].min()
     max = dataFrame['distance'].max() - min
     dataFrame['distance'] -= min
@@ -60,7 +57,7 @@ def normalizeDataFrame(dataFrame):
     #Calculate average
     dataFrame['x_avg'] = (dataFrame['x_min'] + dataFrame['x_max']) / 2
     dataFrame['y_avg'] = (dataFrame['y_min'] + dataFrame['y_max']) / 2
-    dataFrame.drop(['x_min','x_max','y_min','y_max'], axis=1, inplace=True)
+    dataFrame = dataFrame.drop(columns=['x_min','x_max','y_min','y_max'])
     #Increase scale of multiplier to make it more significant
     dataFrame['multiplier'] *= 10000
     #
@@ -69,7 +66,7 @@ def normalizeDataFrame(dataFrame):
 
 def createDataFrame(array, nColumns, header):
     """
-    Create dataframe from array 'array'. 
+    Create dataframe from array 'array'.
     Returns Dataframe which will contain 'nColumns' columns and 'header' header.
     """
     array = array.reshape(-1, nColumns)
@@ -78,7 +75,7 @@ def createDataFrame(array, nColumns, header):
 
 def createAndNormalizeDataFrame(array, nColumns, header):
     """
-    Create and normalize dataframe from array 'array'. 
+    Create and normalize dataframe from array 'array'.
     Returns Dataframe which will contain 'nColumns' columns and 'header' header.
     """
     df = createDataFrame(array, nColumns, header)
@@ -92,7 +89,7 @@ def cleanDataFrameRows(dataFrame):
 
 def cleanDataFrameColumns(dataFrame):
     """Delete columns that are not in HEADER"""
-    dataFrame.drop([c for c in dataFrame.columns if not(c in HEADER)], axis=1, inplace=True)
+    dataFrame = dataFrame.drop(columns=[c for c in dataFrame.columns if not(c in HEADER)])
     return dataFrame
 
 def loadXmlFromDirNormalized(dirname):
@@ -126,7 +123,7 @@ def parseOneXmlFile(xmlFileName, binFileName):
             #Parsing comment
             comments=[]
             for subchild in child:
-                if "function Comment" in str(subchild.tag): 
+                if "function Comment" in str(subchild.tag):
                     comments.append(subchild.text)
             #Expecting comment with min and max values in form
             #<!-- -30 to 55 -->
@@ -155,7 +152,7 @@ def parseOneXmlFile(xmlFileName, binFileName):
                 #Usually if data_type==0, there's no multiplier and offset fields.
                 x_len = int.from_bytes(binFile.read(2))
                 y_len = y_min = y_max = 0
-                
+
                 data_type = int.from_bytes(binFile.read(2))
                 if data_type > 0:
                     binFile.seek(8, 1)
@@ -230,21 +227,29 @@ def readRawCsvFile(filename):
 
 def parseOneCsvFile(filename):
     """
-    Load dataset from filename in CSV format, clean columns and convert data_type to machine-readable format. 
+    Load dataset from filename in CSV format, clean columns and convert data_type to machine-readable format.
     CSV can be exported from ScoobyRom. Returns DataFrame.
     """
     dataFrame = readRawCsvFile(filename)
     dataFrame = cleanDataFrameColumns(dataFrame)
     #Convert data_type column to machine-readable format
+    dataFrame = dataFrame.rename(columns={'data_type': 'data_type_str'})
+    pos = dataFrame.columns.get_loc('data_type_str')
+    default_value = -1
+    dataFrame.insert(pos + 1, 'data_type', default_value, allow_duplicates=False)
+    dataFrame['data_type'] = dataFrame['data_type'].astype(float)
     dataFrame.loc[dataFrame['multiplier'] == 0, 'data_type']      = 0
     dataFrame.loc[(dataFrame['y_len'] == 0) &
-                  (dataFrame['data_type'] == UINT8), 'data_type'] = 1
+                  (dataFrame['data_type_str'] == UINT8), 'data_type'] = 1
     dataFrame.loc[(dataFrame['y_len'] == 0) &
-                  (dataFrame['data_type'] == UINT16),'data_type'] = 2
+                  (dataFrame['data_type_str'] == UINT16),'data_type'] = 2
     dataFrame.loc[(dataFrame['y_len'] != 0) &
-                  (dataFrame['data_type'] == UINT8), 'data_type'] = 3
+                  (dataFrame['data_type_str'] == UINT8), 'data_type'] = 3
     dataFrame.loc[(dataFrame['y_len'] != 0) &
-                  (dataFrame['data_type'] == UINT16),'data_type'] = 4
+                  (dataFrame['data_type_str'] == UINT16),'data_type'] = 4
+    dataFrame = dataFrame.drop(columns=['data_type_str'])
+    if default_value in dataFrame['data_type'].values:
+        print_console_verbose('Data type column contains unexpected (default) value')
     #Convert 'name' column
     #Convert 'Cranking_A' or 'Cranking_1' to 'cranking'
     dataFrame['name'] = dataFrame['name'].str.lower()
@@ -280,7 +285,7 @@ def print_console_verbose(string):
 
 def getCorrectedXMLtree(filename, dataFrame):
     """
-    Take ScoobyRom def from file. 
+    Take ScoobyRom def from file.
     Replace 'name' attribute in all tags
     to corresponing values from dataFrame['name']
     where 'storageaddress' attribute is equal to dataFrame['storageaddress'] value.
@@ -303,7 +308,7 @@ def getCorrectedXMLtree(filename, dataFrame):
 
 def createElement(tagName, attrNameValueTuplesArray):
     """
-    Create XML element. Tag = tagName, 
+    Create XML element. Tag = tagName,
     attributes and values = [('attr1', 'value1'),('attr2', 'value2'), ...]
     Returns: '<tagName attr1="value1" attr2="value2" ... />'
     """
@@ -321,7 +326,7 @@ def createTable2DXml(row):
         ('storageaddress', row['storageaddress'])
     ]
     table2D = createElement('table2D', attributesArray)
-    
+
     attributesArray = [
         ('storageaddress', row['axis_x_storageaddress']),
         ('name', row['name_x']),
@@ -353,7 +358,7 @@ def createTable3DXml(row):
         ('storageaddress', row['storageaddress'])
     ]
     table3D = createElement('table3D', attributesArray)
-    
+
     attributesArray = [
         ('storageaddress', row['axis_x_storageaddress']),
         ('name', row['name_x']),
@@ -386,7 +391,7 @@ def createTable3DXml(row):
 
 def createXmlFromCsv(dataFrame):
     """
-    Create minimum valid ScoobyRom XML definitions file. 
+    Create minimum valid ScoobyRom XML definitions file.
     Returns ElementTree.
     """
     root = ET.ElementTree()
@@ -544,7 +549,7 @@ if dataset is not None:
     print_console_verbose("Training.")
     y = dataFrame['name']
     #Remove non-number column(s)
-    dataFrame.drop(['name'], axis=1, inplace=True)
+    dataFrame = dataFrame.drop(columns=['name'])
     #Split to train and test if needed
     if args.test_accuracy:
         X_train, X_holdout, y_train, y_holdout = train_test_split(dataFrame.values,
@@ -615,7 +620,7 @@ elif args.predict is not None:
         exit()
     tempDataFrame = normalizeDataFrame(dataFrame.copy())
     #Remove non-number column(s)
-    tempDataFrame.drop(['name'], axis=1, inplace=True)
+    tempDataFrame = tempDataFrame.drop(columns=['name'])
 
     print_console_verbose('Predicting')
 
@@ -626,7 +631,7 @@ elif args.predict is not None:
     #Calculate minimum distance, because there can be "lonely" tables
     #and put it to array
     knn_min_distance = np.min(distanceArray, axis=1)
-    
+
     #Keep all defs data in case of CSV format
     if inputFormat == DataFormat.csv:
         dataFrame = rawDataFrame
@@ -661,18 +666,18 @@ elif args.predict is not None:
         newXMLtree.write(pre_xml_filename, pretty_print=True, encoding="utf-8", xml_declaration=True)
     else:
         print_console_verbose('Not saving XML defs due to settings.')
-    
+
     if args.dump_txt:
         if shouldSave:
             pre_txt_filename = args.pre_txt_filename
             print_console_verbose(f'Saving text data defs to {pre_txt_filename}')
             dumpedDataFrame = dataFrame.copy()
             #Drop unneeded columns
-            dumpedDataFrame.drop(['x_min','x_max','y_min','y_max'], axis=1, inplace=True)
+            dumpedDataFrame = dumpedDataFrame.drop(columns=['x_min','x_max','y_min','y_max'])
             print(dumpedDataFrame.to_string(), file=open(pre_txt_filename, 'w'))
         else:
             print_console_verbose('Not saving text data defs due to settings.')
-    
+
     print_console_verbose('Done.')
 else:
     parser.print_help()
