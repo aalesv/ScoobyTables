@@ -1,18 +1,19 @@
 import argparse
 import glob
+import pickle
 import re
 import struct
-from lxml import etree as ET
+from enum import Enum
+from pathlib import Path
+
 import numpy as np
-import pyarrow
 import pandas as pd
+from lxml import etree as ET
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score
-import pickle
-from enum import Enum, auto
 
-VERSION = '2026.1125'
+VERSION = '2026.1126'
 
 class CaseInsensitiveEnum(str, Enum):
     @classmethod
@@ -60,7 +61,6 @@ def normalizeDataFrame(dataFrame):
     dataFrame = dataFrame.drop(columns=['x_min','x_max','y_min','y_max'])
     #Increase scale of multiplier to make it more significant
     dataFrame['multiplier'] *= 10000
-    #
     dataFrame['data_type'] *= 25
     return dataFrame
 
@@ -97,11 +97,11 @@ def loadXmlFromDirNormalized(dirname):
     Load dataset from ROM binary files located in 'dirname'.\n
     XML must be in ScoobyRom format. Returns DataFrame.
     """
-    files = glob.glob(f'{dirname}/*.xml')
+    files = list(Path(dirname).glob('*.xml'))
     dataFrame = pd.DataFrame()
     for f in files:
-        binFileName = re.sub('\.xml$', '.bin', f)
-        (t, nColumns, header) = parseOneXmlFile(f, binFileName)
+        binFileName = f.with_suffix('.bin')
+        (t, nColumns, header) = parseOneXmlFile(str(f), str(binFileName))
         tempDataFrame = createAndNormalizeDataFrame(t, nColumns, header)
         frames = [dataFrame, tempDataFrame]
         dataFrame = pd.concat(frames, ignore_index=True)
@@ -116,91 +116,91 @@ def parseOneXmlFile(xmlFileName, binFileName):
     parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
     root = ET.parse(xmlFileName, parser)
     #Open for read in binary mode
-    binFile = open(binFileName, 'rb')
-    ds = np.array([])
-    for child in root:
-        if child.tag == 'table2D' or child.tag == 'table3D':
-            #Parsing comment
-            comments=[]
-            for subchild in child:
-                if "function Comment" in str(subchild.tag):
-                    comments.append(subchild.text)
-            #Expecting comment with min and max values in form
-            #<!-- -30 to 55 -->
-            x_min, _ ,x_max = comments[0].split(maxsplit=3)
-            #For 2D tables second comment differs
-            s = comments[1].split(maxsplit=3)
-            y_min = s[0]
-            y_max = s[2]
-            #Convert 'name' attribute
-            #Convert 'Cranking_A' or 'Cranking_1' to 'cranking'
-            name = re.sub('_[a-z0-9]$', '', child.attrib.get('name').lower())
-            storageaddress = int(child.attrib.get('storageaddress'), 16)
-            #Go to table structure location
-            binFile.seek(storageaddress)
-            multiplier = 0
-            offset = 0
-            if child.tag == 'table2D':
-                #2D table structure
-                # x_len:          .data.w
-                # data_type:      .data.w
-                # x_ptr:          .data.l
-                # data_ptr:       .data.l
-                # multiplier:     .float
-                # offset:         .float
-                #
-                #Usually if data_type==0, there's no multiplier and offset fields.
-                x_len = int.from_bytes(binFile.read(2))
-                y_len = y_min = y_max = 0
+    with open(binFileName, 'rb') as binFile:
+        ds = np.array([])
+        for child in root:
+            if child.tag == 'table2D' or child.tag == 'table3D':
+                #Parsing comment
+                comments=[]
+                for subchild in child:
+                    if "function Comment" in str(subchild.tag):
+                        comments.append(subchild.text)
+                #Expecting comment with min and max values in form
+                #<!-- -30 to 55 -->
+                x_min, _ ,x_max = comments[0].split(maxsplit=3)
+                #For 2D tables second comment differs
+                s = comments[1].split(maxsplit=3)
+                y_min = s[0]
+                y_max = s[2]
+                #Convert 'name' attribute
+                #Convert 'Cranking_A' or 'Cranking_1' to 'cranking'
+                name = re.sub('_[a-z0-9]$', '', child.attrib.get('name').lower())
+                storageaddress = int(child.attrib.get('storageaddress'), 16)
+                #Go to table structure location
+                binFile.seek(storageaddress)
+                multiplier = 0
+                offset = 0
+                if child.tag == 'table2D':
+                    #2D table structure
+                    # x_len:          .data.w
+                    # data_type:      .data.w
+                    # x_ptr:          .data.l
+                    # data_ptr:       .data.l
+                    # multiplier:     .float
+                    # offset:         .float
+                    #
+                    #Usually if data_type==0, there's no multiplier and offset fields.
+                    x_len = int.from_bytes(binFile.read(2))
+                    y_len = y_min = y_max = 0
 
-                data_type = int.from_bytes(binFile.read(2))
-                if data_type > 0:
-                    binFile.seek(8, 1)
-                    #Read IEEE754 float little endian
-                    (multiplier,) = struct.unpack('>f', binFile.read(4))
-                    (offset,) = struct.unpack('>f', binFile.read(4))
+                    data_type = int.from_bytes(binFile.read(2))
+                    if data_type > 0:
+                        binFile.seek(8, 1)
+                        #Read IEEE754 float little endian
+                        (multiplier,) = struct.unpack('>f', binFile.read(4))
+                        (offset,) = struct.unpack('>f', binFile.read(4))
 
-            if child.tag == 'table3D':
-                #3D table structure
-                # x_len:          .data.w
-                # y_len:          .data.w
-                # x_axis_ptr:     .data.l
-                # y_axis_ptr:     .data.l
-                # data_ptr:       .data.l
-                # data_type:      .data.l
-                # multiplier:     .float
-                # offset:         .float
-                #
-                #Usually if data_type==0, there's no multiplier and offset fields.
-                x_len = int.from_bytes(binFile.read(2))
-                y_len = int.from_bytes(binFile.read(2))
-                #seek +12 bytes from here
-                binFile.seek(12, 1)
-                data_type = int.from_bytes(binFile.read(4))
-                if data_type > 0:
-                    #Read IEEE754 float little endian
-                    (multiplier,) = struct.unpack('>f', binFile.read(4))
-                    (offset,) = struct.unpack('>f', binFile.read(4))
+                if child.tag == 'table3D':
+                    #3D table structure
+                    # x_len:          .data.w
+                    # y_len:          .data.w
+                    # x_axis_ptr:     .data.l
+                    # y_axis_ptr:     .data.l
+                    # data_ptr:       .data.l
+                    # data_type:      .data.l
+                    # multiplier:     .float
+                    # offset:         .float
+                    #
+                    #Usually if data_type==0, there's no multiplier and offset fields.
+                    x_len = int.from_bytes(binFile.read(2))
+                    y_len = int.from_bytes(binFile.read(2))
+                    #seek +12 bytes from here
+                    binFile.seek(12, 1)
+                    data_type = int.from_bytes(binFile.read(4))
+                    if data_type > 0:
+                        #Read IEEE754 float little endian
+                        (multiplier,) = struct.unpack('>f', binFile.read(4))
+                        (offset,) = struct.unpack('>f', binFile.read(4))
 
-            #Convert data_type column to machine-readable format
-            match data_type:
-                case 0x400:
-                    #2D uint8
-                    data_type = 1
-                case 0x800:
-                    #2D uint16
-                    data_type = 2
-                case 0x4000000:
-                    #3D uint8
-                    data_type = 3
-                case 0x8000000:
-                    #3D uint16
-                    data_type = 4
-            #Header. Place 'name' last!
-            h = HEADER
-            t = np.array([ storageaddress,  x_len,  x_min,  x_max,  y_len,  y_min,  y_max,  data_type,  multiplier,  offset,  name])
-            (ncolumns,) = t.shape
-            ds = np.append(ds, t)
+                #Convert data_type column to machine-readable format
+                match data_type:
+                    case 0x400:
+                        #2D uint8
+                        data_type = 1
+                    case 0x800:
+                        #2D uint16
+                        data_type = 2
+                    case 0x4000000:
+                        #3D uint8
+                        data_type = 3
+                    case 0x8000000:
+                        #3D uint16
+                        data_type = 4
+                #Header. Place 'name' last!
+                h = HEADER
+                t = np.array([ storageaddress,  x_len,  x_min,  x_max,  y_len,  y_min,  y_max,  data_type,  multiplier,  offset,  name])
+                (ncolumns,) = t.shape
+                ds = np.append(ds, t)
     return ds, ncolumns, h
 
 def loadCsvFromDirNormalized(dirname):
@@ -253,7 +253,7 @@ def parseOneCsvFile(filename):
     #Convert 'name' column
     #Convert 'Cranking_A' or 'Cranking_1' to 'cranking'
     dataFrame['name'] = dataFrame['name'].str.lower()
-    dataFrame['name'] = dataFrame['name'].replace(regex=r'(.*)_[a-z0-9]$', value=r'\1')
+    dataFrame['name'] = dataFrame['name'].str.replace(r'_[a-z0-9]$', '', regex=True)
     return dataFrame
 
 def trainKNN(x, y, neighbors=2):
@@ -266,15 +266,13 @@ def trainKNN(x, y, neighbors=2):
 
 def dumpModel(model, filename):
     """Dump model to file"""
-    outFile = open(filename, 'wb')
-    pickle.dump(model, outFile)
-    outFile.close()
+    with open(filename, 'wb') as outFile:
+        pickle.dump(model, outFile)
 
 def loadModel(filename):
     """Load model from file"""
-    inFile = open(filename, 'rb')
-    model = pickle.load(inFile)
-    inFile.close()
+    with open(filename, 'rb') as inFile:
+        model = pickle.load(inFile)
     return model
 
 def print_console_verbose(string):
@@ -471,7 +469,7 @@ parserGroupOptions = parser.add_argument('-i', '--input-format',
                                          default='xml')
 parserGroupOptions = parser.add_argument('--model-dump-file',
                                          metavar='<filename>',
-                                         help=f'Model dump file name.',
+                                         help='Model dump file name.',
                                          default=f'{MODEL_DUMP_FILE}')
 parserGroupOptions = parser.add_argument('-v', '--verbose',
                                          action='store_true',
@@ -612,7 +610,7 @@ elif args.predict is not None:
     elif inputFormat == DataFormat.xml:
         #ScoobyROM defs to predict .xml file
         xmlFileName = args.predict
-        binFileName = re.sub('\.xml$', '.bin', xmlFileName)
+        binFileName = str(Path(xmlFileName).with_suffix('.bin'))
         (array, nColumns, header) = parseOneXmlFile(xmlFileName, binFileName)
         dataFrame = createDataFrame(array, nColumns, header)
     else:
@@ -674,7 +672,8 @@ elif args.predict is not None:
             dumpedDataFrame = dataFrame.copy()
             #Drop unneeded columns
             dumpedDataFrame = dumpedDataFrame.drop(columns=['x_min','x_max','y_min','y_max'])
-            print(dumpedDataFrame.to_string(), file=open(pre_txt_filename, 'w'))
+            with open(pre_txt_filename, 'w') as f:
+                print(dumpedDataFrame.to_string(), file=f)
         else:
             print_console_verbose('Not saving text data defs due to settings.')
 

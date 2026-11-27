@@ -4,6 +4,10 @@ This software is designed for automatic Subaru Denso ROM table markup using mach
 
 ### What's new
 
+#### Version 2026.1126
+
+No new features, refactoring.
+
 #### Version 2026.1125
 
 No new features - refactored to support pandas 3 library.
